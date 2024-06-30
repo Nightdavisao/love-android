@@ -40,6 +40,7 @@ import android.view.WindowManager;
 
 import androidx.annotation.Keep;
 import androidx.core.app.ActivityCompat;
+import androidx.documentfile.provider.DocumentFile;
 
 import org.libsdl.app.SDLActivity;
 
@@ -47,12 +48,15 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 
 public class GameActivity extends SDLActivity {
     private static final String TAG = "GameActivity";
     public static final int RECORD_AUDIO_REQUEST_CODE = 3;
+    public static final int DIRECTORY_REQUEST_CODE = 69;
 
     protected Vibrator vibrator;
     protected boolean shortEdgesMode;
@@ -76,13 +80,13 @@ public class GameActivity extends SDLActivity {
     @Override
     protected String[] getLibraries() {
         return new String[]{
-            "c++_shared",
-            "SDL2",
-            "oboe",
-            "openal",
-            "luajit",
-            "liblove",
-            "love",
+                "c++_shared",
+                "SDL2",
+                "oboe",
+                "openal",
+                "luajit",
+                "liblove",
+                "love",
         };
     }
 
@@ -101,10 +105,11 @@ public class GameActivity extends SDLActivity {
             vibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
         }
 
-        Intent intent = getIntent();
-        handleIntent(intent, true);
+        // Intent intent = getIntent();
+        // handleIntent(intent, true);
         // Prevent SDL sending filedropped event. Let us do that instead.
-        intent.setData(null);
+        // intent.setData(null);
+        openGameDirectory();
 
         super.onCreate(savedInstanceState);
 
@@ -121,10 +126,55 @@ public class GameActivity extends SDLActivity {
             shortEdgesMode = false;
         }
 
-        if (delayedUri != null) {
-            // This delayed fd is only sent if an embedded game is present.
-            sendUriAsDroppedFile(delayedUri);
-            delayedUri = null;
+
+//        if (delayedUri != null) {
+//            // This delayed fd is only sent if an embedded game is present.
+//            sendUriAsDroppedFile(delayedUri);
+//            delayedUri = null;
+//        }
+    }
+
+    public void openGameDirectory() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+        startActivityForResult(intent, DIRECTORY_REQUEST_CODE);
+    }
+
+
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, requestCode, data);
+
+        if (requestCode == DIRECTORY_REQUEST_CODE) {
+            if (resultCode == RESULT_OK) {
+                Uri uri = null;
+                Uri gameUri = null;
+                if (data != null) {
+                    uri = data.getData();
+                    assert uri != null;
+                    DocumentFile docFile = DocumentFile.fromTreeUri(getContext(), uri);
+                    if (docFile != null) {
+                        DocumentFile[] filesList = docFile.listFiles();
+                        for (DocumentFile file : filesList) {
+                            if (Objects.equals(file.getName(), "game.love")) {
+                                Log.d(TAG, "onActivityResult: found game.love");
+                                gameUri = file.getUri();
+                                continue;
+                            }
+
+                            if (Objects.requireNonNull(file.getName()).startsWith("patch")) {
+                                // is it a directory?
+                                if (file.isDirectory()) {
+                                    Log.d(TAG, "onActivityResult: found patch directory");
+
+                                }
+                            }
+                        }
+                    }
+
+                    if (gameUri != null) {
+                        processOpenGame(gameUri);
+                    }
+                }
+            }
         }
     }
 
@@ -252,10 +302,10 @@ public class GameActivity extends SDLActivity {
             if (cutout != null) {
                 rect = new Rect();
                 rect.set(
-                    cutout.getSafeInsetLeft(),
-                    cutout.getSafeInsetTop(),
-                    cutout.getSafeInsetRight(),
-                    cutout.getSafeInsetBottom()
+                        cutout.getSafeInsetLeft(),
+                        cutout.getSafeInsetTop(),
+                        cutout.getSafeInsetRight(),
+                        cutout.getSafeInsetBottom()
                 );
             }
         }
@@ -305,15 +355,15 @@ public class GameActivity extends SDLActivity {
     @Keep
     public void requestRecordAudioPermission() {
         if (ActivityCompat.checkSelfPermission(this,
-            Manifest.permission.RECORD_AUDIO)
-            == PackageManager.PERMISSION_GRANTED) {
+                Manifest.permission.RECORD_AUDIO)
+                == PackageManager.PERMISSION_GRANTED) {
             return;
         }
 
         Log.d("GameActivity", "Requesting mic permission and locking LÖVE thread until we have an answer.");
         ActivityCompat.requestPermissions(this,
-            new String[]{Manifest.permission.RECORD_AUDIO},
-            RECORD_AUDIO_REQUEST_CODE);
+                new String[]{Manifest.permission.RECORD_AUDIO},
+                RECORD_AUDIO_REQUEST_CODE);
 
         synchronized (recordAudioRequestDummy) {
             try {
